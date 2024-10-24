@@ -451,7 +451,7 @@ impl Notify {
         curr = self.state.load(SeqCst);
 
         if let Some(waker) = notify_locked(&mut waiter, &self.state, curr, strategy) {
-            drop(waiters);
+            drop(waiter);
             waker.wake();
         }
     }
