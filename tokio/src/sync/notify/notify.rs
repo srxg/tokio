@@ -444,13 +444,13 @@ impl Notify {
         }
 
         // There are waiters, the lock must be acquired to notify.
-        let mut waiters = self.waiter.lock();
+        let mut waiter = self.waiter.lock();
 
         // The state must be reloaded while the lock is held. The state may only
         // transition out of WAITING while the lock is held.
         curr = self.state.load(SeqCst);
 
-        if let Some(waker) = notify_locked(&mut waiters, &self.state, curr, strategy) {
+        if let Some(waker) = notify_locked(&mut waiter, &self.state, curr, strategy) {
             drop(waiters);
             waker.wake();
         }
