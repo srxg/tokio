@@ -7,6 +7,8 @@ use super::{notify::Notify, Notification, NotifyOneStrategy, Waiter};
 type WaitList = LinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 type GuardedWaitList = GuardedLinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 
+
+// ! WIP - leaving for now
 pub struct NotifyAll {
     state: AtomicUsize,
     waiters: Mutex<WaitList>,
