@@ -787,7 +787,7 @@ impl Notified<'_> {
 
                     // Acquire the lock and attempt to transition to the waiting
                     // state.
-                    let mut waiters = notify.waiters.lock();
+                    let mut waiters = notify.waiter.lock();
 
                     // Reload the state with the lock held
                     let mut curr = notify.state.load(SeqCst);
