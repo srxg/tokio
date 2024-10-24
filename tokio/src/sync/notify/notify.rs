@@ -489,7 +489,7 @@ impl Notify {
     /// }
     /// ```
     pub fn notify_waiters(&self) {
-        let mut waiters = self.waiters.lock();
+        let mut waiters = self.waiter.lock();
 
         // The state must be loaded while the lock is held. The state may only
         // transition out of WAITING while the lock is held.
