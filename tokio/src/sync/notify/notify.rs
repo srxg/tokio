@@ -574,7 +574,7 @@ impl UnwindSafe for Notify {}
 impl RefUnwindSafe for Notify {}
 
 fn notify_locked(
-    waiters: &mut WaitList,
+    waiter: &mut Waiter,
     state: &AtomicUsize,
     curr: usize,
     strategy: NotifyOneStrategy,
