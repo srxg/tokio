@@ -554,7 +554,7 @@ impl Notify {
             wakers.wake_all();
 
             // Acquire the lock again.
-            waiters = self.waiters.lock();
+            waiters = self.waiter.lock();
         }
 
         // Release the lock before notifying
