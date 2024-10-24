@@ -629,7 +629,6 @@ fn notify_locked(
 }
 
 // ===== impl Notified =====
-
 impl Notified<'_> {
     /// Adds this future to the list of futures that are ready to receive
     /// wakeups from calls to [`notify_one`].
