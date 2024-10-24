@@ -5,19 +5,19 @@
 // triggers this warning but it is safe to ignore in this case.
 #![cfg_attr(not(feature = "sync"), allow(unreachable_pub, dead_code))]
 
-use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::atomic::AtomicUsize;
 use crate::loom::sync::Mutex;
 use crate::util::linked_list::{self, GuardedLinkedList, LinkedList};
 use crate::util::WakeList;
 
 use std::future::Future;
-use std::marker::PhantomPinned;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::atomic::Ordering::{self, Acquire, Relaxed, Release, SeqCst};
+use std::sync::atomic::Ordering::{Acquire, Relaxed, SeqCst};
 use std::task::{Context, Poll, Waker};
+
+use super::{NotifyOneStrategy, Waiter};
 
 type WaitList = LinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 type GuardedWaitList = GuardedLinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
@@ -210,169 +210,9 @@ pub struct Notify {
     // - number of times `notify_waiters` was called can
     //   be modified only if `waiters` lock is held
     state: AtomicUsize,
-    waiters: Mutex<WaitList>,
+    pub(super) waiter: Mutex<Option<Waiter>>,
 }
 
-#[derive(Debug)]
-struct Waiter {
-    /// Intrusive linked-list pointers.
-    pointers: linked_list::Pointers<Waiter>,
-
-    /// Waiting task's waker. Depending on the value of `notification`,
-    /// this field is either protected by the `waiters` lock in
-    /// `Notify`, or it is exclusively owned by the enclosing `Waiter`.
-    waker: UnsafeCell<Option<Waker>>,
-
-    /// Notification for this waiter. Uses 2 bits to store if and how was
-    /// notified, 1 bit for storing if it was woken up using FIFO or LIFO, and
-    /// the rest of it is unused.
-    /// * if it's `None`, then `waker` is protected by the `waiters` lock.
-    /// * if it's `Some`, then `waker` is exclusively owned by the
-    ///   enclosing `Waiter` and can be accessed without locking.
-    notification: AtomicNotification,
-
-    /// Should not be `Unpin`.
-    _p: PhantomPinned,
-}
-
-impl Waiter {
-    fn new() -> Waiter {
-        Waiter {
-            pointers: linked_list::Pointers::new(),
-            waker: UnsafeCell::new(None),
-            notification: AtomicNotification::none(),
-            _p: PhantomPinned,
-        }
-    }
-}
-
-generate_addr_of_methods! {
-    impl<> Waiter {
-        unsafe fn addr_of_pointers(self: NonNull<Self>) -> NonNull<linked_list::Pointers<Waiter>> {
-            &self.pointers
-        }
-    }
-}
-
-// No notification.
-const NOTIFICATION_NONE: usize = 0b000;
-
-// Notification type used by `notify_one`.
-const NOTIFICATION_ONE: usize = 0b001;
-
-// Notification type used by `notify_last`.
-const NOTIFICATION_LAST: usize = 0b101;
-
-// Notification type used by `notify_waiters`.
-const NOTIFICATION_ALL: usize = 0b010;
-
-/// Notification for a `Waiter`.
-/// This struct is equivalent to `Option<Notification>`, but uses
-/// `AtomicUsize` inside for atomic operations.
-#[derive(Debug)]
-struct AtomicNotification(AtomicUsize);
-
-impl AtomicNotification {
-    fn none() -> Self {
-        AtomicNotification(AtomicUsize::new(NOTIFICATION_NONE))
-    }
-
-    /// Store-release a notification.
-    /// This method should be called exactly once.
-    fn store_release(&self, notification: Notification) {
-        let data: usize = match notification {
-            Notification::All => NOTIFICATION_ALL,
-            Notification::One(NotifyOneStrategy::Fifo) => NOTIFICATION_ONE,
-            Notification::One(NotifyOneStrategy::Lifo) => NOTIFICATION_LAST,
-        };
-        self.0.store(data, Release);
-    }
-
-    fn load(&self, ordering: Ordering) -> Option<Notification> {
-        let data = self.0.load(ordering);
-        match data {
-            NOTIFICATION_NONE => None,
-            NOTIFICATION_ONE => Some(Notification::One(NotifyOneStrategy::Fifo)),
-            NOTIFICATION_LAST => Some(Notification::One(NotifyOneStrategy::Lifo)),
-            NOTIFICATION_ALL => Some(Notification::All),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Clears the notification.
-    /// This method is used by a `Notified` future to consume the
-    /// notification. It uses relaxed ordering and should be only
-    /// used once the atomic notification is no longer shared.
-    fn clear(&self) {
-        self.0.store(NOTIFICATION_NONE, Relaxed);
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-#[repr(usize)]
-enum NotifyOneStrategy {
-    Fifo,
-    Lifo,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-#[repr(usize)]
-enum Notification {
-    One(NotifyOneStrategy),
-    All,
-}
-
-/// List used in `Notify::notify_waiters`. It wraps a guarded linked list
-/// and gates the access to it on `notify.waiters` mutex. It also empties
-/// the list on drop.
-struct NotifyWaitersList<'a> {
-    list: GuardedWaitList,
-    is_empty: bool,
-    notify: &'a Notify,
-}
-
-impl<'a> NotifyWaitersList<'a> {
-    fn new(
-        unguarded_list: WaitList,
-        guard: Pin<&'a Waiter>,
-        notify: &'a Notify,
-    ) -> NotifyWaitersList<'a> {
-        let guard_ptr = NonNull::from(guard.get_ref());
-        let list = unguarded_list.into_guarded(guard_ptr);
-        NotifyWaitersList {
-            list,
-            is_empty: false,
-            notify,
-        }
-    }
-
-    /// Removes the last element from the guarded list. Modifying this list
-    /// requires an exclusive access to the main list in `Notify`.
-    fn pop_back_locked(&mut self, _waiters: &mut WaitList) -> Option<NonNull<Waiter>> {
-        let result = self.list.pop_back();
-        if result.is_none() {
-            // Save information about emptiness to avoid waiting for lock
-            // in the destructor.
-            self.is_empty = true;
-        }
-        result
-    }
-}
-
-impl Drop for NotifyWaitersList<'_> {
-    fn drop(&mut self) {
-        // If the list is not empty, we unlink all waiters from it.
-        // We do not wake the waiters to avoid double panics.
-        if !self.is_empty {
-            let _lock_guard = self.notify.waiters.lock();
-            while let Some(waiter) = self.list.pop_back() {
-                // Safety: we never make mutable references to waiters.
-                let waiter = unsafe { waiter.as_ref() };
-                waiter.notification.store_release(Notification::All);
-            }
-        }
-    }
-}
 
 /// Future returned from [`Notify::notified()`].
 ///
@@ -450,7 +290,7 @@ impl Notify {
     pub fn new() -> Notify {
         Notify {
             state: AtomicUsize::new(0),
-            waiters: Mutex::new(LinkedList::new()),
+            waiter: Mutex::new(None),
         }
     }
 
@@ -475,7 +315,7 @@ impl Notify {
     pub const fn const_new() -> Notify {
         Notify {
             state: AtomicUsize::new(0),
-            waiters: Mutex::const_new(LinkedList::new()),
+            waiter: Mutex::const_new(None),
         }
     }
 
@@ -578,20 +418,8 @@ impl Notify {
     // Alias for old name in 0.x
     #[cfg_attr(docsrs, doc(alias = "notify"))]
     pub fn notify_one(&self) {
-        self.notify_with_strategy(NotifyOneStrategy::Fifo);
-    }
 
-    /// Notifies the last waiting task.
-    ///
-    /// This function behaves similar to `notify_one`. The only difference is that it wakes
-    /// the most recently added waiter instead of the oldest waiter.
-    ///
-    /// Check the [`notify_one()`] documentation for more info and
-    /// examples.
-    ///
-    /// [`notify_one()`]: Notify::notify_one
-    pub fn notify_last(&self) {
-        self.notify_with_strategy(NotifyOneStrategy::Lifo);
+        self.notify_with_strategy(NotifyOneStrategy::Fifo);
     }
 
     fn notify_with_strategy(&self, strategy: NotifyOneStrategy) {
@@ -616,7 +444,7 @@ impl Notify {
         }
 
         // There are waiters, the lock must be acquired to notify.
-        let mut waiters = self.waiters.lock();
+        let mut waiters = self.waiter.lock();
 
         // The state must be reloaded while the lock is held. The state may only
         // transition out of WAITING while the lock is held.

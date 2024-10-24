@@ -465,6 +465,9 @@ cfg_sync! {
     pub(crate) mod notify;
     pub use notify::Notify;
 
+    pub(crate) mod notify_all;
+    pub use notify_all::NotifyAll;
+
     pub mod oneshot;
 
     pub(crate) mod batch_semaphore;
