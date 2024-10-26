@@ -8,7 +8,8 @@ use crate::runtime::task::{
 use crate::runtime::{
     blocking, context, Config, MetricsBatch, SchedulerMetrics, TaskHooks, TaskMeta, WorkerMetrics,
 };
-use crate::sync::notify::Notify;
+
+use crate::sync::Notify;
 use crate::util::atomic_cell::AtomicCell;
 use crate::util::{waker_ref, RngSeedGenerator, Wake, WakerRef};
 

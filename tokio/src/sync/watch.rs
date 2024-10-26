@@ -112,7 +112,7 @@
 //! [`Sender::subscribe()`]: crate::sync::watch::Sender::subscribe
 
 use crate::runtime::coop::cooperative;
-use crate::sync::notify::Notify;
+use crate::sync::NotifyMany;
 
 use crate::loom::sync::atomic::AtomicUsize;
 use crate::loom::sync::atomic::Ordering::{AcqRel, Relaxed};
@@ -262,7 +262,7 @@ struct Shared<T> {
     notify_rx: big_notify::BigNotify,
 
     /// Notifies any task listening for `Receiver` dropped events.
-    notify_tx: Notify,
+    notify_tx: NotifyMany,
 }
 
 impl<T: fmt::Debug> fmt::Debug for Shared<T> {
@@ -319,12 +319,12 @@ pub mod error {
 }
 
 mod big_notify {
-    use super::Notify;
-    use crate::sync::notify::Notified;
+    use super::NotifyMany;
+    use crate::sync::notify_many::Notified;
 
-    // To avoid contention on the lock inside the `Notify`, we store multiple
+    // To avoid contention on the lock inside the `NotifyMany`, we store multiple
     // copies of it. Then, we use either circular access or randomness to spread
-    // out threads over different `Notify` objects.
+    // out threads over different `NotifyMany` objects.
     //
     // Some simple benchmarks show that randomness performs slightly better than
     // circular access (probably due to contention on `next`), so we prefer to
@@ -336,7 +336,7 @@ mod big_notify {
     pub(super) struct BigNotify {
         #[cfg(not(all(not(loom), feature = "sync", any(feature = "rt", feature = "macros"))))]
         next: std::sync::atomic::AtomicUsize,
-        inner: [Notify; 8],
+        inner: [NotifyMany; 8],
     }
 
     impl BigNotify {
@@ -507,7 +507,7 @@ pub fn channel<T>(init: T) -> (Sender<T>, Receiver<T>) {
         ref_count_rx: AtomicUsize::new(1),
         ref_count_tx: AtomicUsize::new(1),
         notify_rx: big_notify::BigNotify::new(),
-        notify_tx: Notify::new(),
+        notify_tx: NotifyMany::new(),
     });
 
     let tx = Sender {

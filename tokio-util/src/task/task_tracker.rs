@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::{futures::Notified, Notify};
+use tokio::sync::{futures::NotifiedMany, NotifyMany};
 
 #[cfg(feature = "rt")]
 use tokio::{
@@ -169,7 +169,7 @@ struct TaskTrackerInner {
     /// The rest of the bits count the number of tracked tasks.
     state: AtomicUsize,
     /// Used to notify when the last task exits.
-    on_last_exit: Notify,
+    on_last_exit: NotifyMany,
 }
 
 pin_project! {
@@ -193,7 +193,7 @@ pin_project! {
     #[must_use = "futures do nothing unless polled"]
     pub struct TaskTrackerWaitFuture<'a> {
         #[pin]
-        future: Notified<'a>,
+        future: NotifiedMany<'a>,
         inner: Option<&'a TaskTrackerInner>,
     }
 }
@@ -203,7 +203,7 @@ impl TaskTrackerInner {
     fn new() -> Self {
         Self {
             state: AtomicUsize::new(0),
-            on_last_exit: Notify::new(),
+            on_last_exit: NotifyMany::new(),
         }
     }
 

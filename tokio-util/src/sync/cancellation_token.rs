@@ -66,7 +66,7 @@ pin_project! {
     pub struct WaitForCancellationFuture<'a> {
         cancellation_token: &'a CancellationToken,
         #[pin]
-        future: tokio::sync::futures::Notified<'a>,
+        future: tokio::sync::futures::NotifiedMany<'a>,
     }
 }
 
@@ -94,7 +94,7 @@ pin_project! {
         // See <https://users.rust-lang.org/t/unsafe-code-review-semi-owning-weak-rwlock-t-guard/95706>
         // for more info.
         #[pin]
-        future: MaybeDangling<tokio::sync::futures::Notified<'static>>,
+        future: MaybeDangling<tokio::sync::futures::NotifiedMany<'static>>,
         cancellation_token: CancellationToken,
     }
 }
@@ -348,7 +348,7 @@ impl WaitForCancellationFutureOwned {
     /// destroyed.
     unsafe fn new_future(
         cancellation_token: &CancellationToken,
-    ) -> tokio::sync::futures::Notified<'static> {
+    ) -> tokio::sync::futures::NotifiedMany<'static> {
         let inner_ptr = Arc::as_ptr(&cancellation_token.inner);
         // SAFETY: The `Arc::as_ptr` method guarantees that `inner_ptr` remains
         // valid until the strong count of the Arc drops to zero, and the caller

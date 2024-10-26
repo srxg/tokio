@@ -1,6 +1,7 @@
 cfg_not_loom! {
     mod atomic_waker;
     mod notify;
+    mod notify_many;
     mod semaphore_batch;
 }
 

@@ -5,7 +5,8 @@ use crate::loom::sync::Arc;
 use crate::runtime::park::CachedParkThread;
 use crate::sync::mpsc::error::TryRecvError;
 use crate::sync::mpsc::{bounded, list, unbounded};
-use crate::sync::notify::Notify;
+
+use crate::sync::NotifyMany;
 use crate::util::cacheline::CachePadded;
 
 use std::fmt;
@@ -57,7 +58,7 @@ pub(super) struct Chan<T, S> {
     rx_waker: CachePadded<AtomicWaker>,
 
     /// Notifies all tasks listening for the receiver being dropped.
-    notify_rx_closed: Notify,
+    notify_rx_closed: NotifyMany,
 
     /// Coordinates access to channel's capacity.
     semaphore: S,
@@ -116,7 +117,7 @@ pub(crate) fn channel<T, S: Semaphore>(semaphore: S) -> (Tx<T, S>, Rx<T, S>) {
     let (tx, rx) = list::channel();
 
     let chan = Arc::new(Chan {
-        notify_rx_closed: Notify::new(),
+        notify_rx_closed: NotifyMany::new(),
         tx: CachePadded::new(tx),
         semaphore,
         rx_waker: CachePadded::new(AtomicWaker::new()),

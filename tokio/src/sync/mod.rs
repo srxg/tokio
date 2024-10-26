@@ -450,6 +450,7 @@ cfg_sync! {
     /// Named future types.
     pub mod futures {
         pub use super::notify::Notified;
+        pub use super::notify_many::Notified as NotifiedMany;
     }
 
     mod barrier;
@@ -464,6 +465,9 @@ cfg_sync! {
 
     pub(crate) mod notify;
     pub use notify::Notify;
+    
+    pub(crate) mod notify_many;
+    pub use notify_many::NotifyMany;
 
     pub mod oneshot;
 

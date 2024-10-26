@@ -45,7 +45,7 @@ use crate::loom::sync::{Arc, Mutex, MutexGuard};
 /// The actual data it holds is wrapped inside a mutex for synchronization.
 pub(crate) struct TreeNode {
     inner: Mutex<Inner>,
-    waker: tokio::sync::Notify,
+    waker: tokio::sync::NotifyMany,
 }
 impl TreeNode {
     pub(crate) fn new() -> Self {
@@ -57,11 +57,11 @@ impl TreeNode {
                 is_cancelled: false,
                 num_handles: 1,
             }),
-            waker: tokio::sync::Notify::new(),
+            waker: tokio::sync::NotifyMany::new(),
         }
     }
 
-    pub(crate) fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+    pub(crate) fn notified(&self) -> tokio::sync::futures::NotifiedMany<'_> {
         self.waker.notified()
     }
 }
@@ -99,7 +99,7 @@ pub(crate) fn child_node(parent: &Arc<TreeNode>) -> Arc<TreeNode> {
                 is_cancelled: true,
                 num_handles: 1,
             }),
-            waker: tokio::sync::Notify::new(),
+            waker: tokio::sync::NotifyMany::new(),
         });
     }
 
@@ -111,7 +111,7 @@ pub(crate) fn child_node(parent: &Arc<TreeNode>) -> Arc<TreeNode> {
             is_cancelled: false,
             num_handles: 1,
         }),
-        waker: tokio::sync::Notify::new(),
+        waker: tokio::sync::NotifyMany::new(),
     });
 
     locked_parent.children.push(child.clone());

@@ -62,6 +62,11 @@ path = "sync_notify.rs"
 harness = false
 
 [[bench]]
+name = "sync_notify_many"
+path = "sync_notify_many.rs"
+harness = false
+
+[[bench]]
 name = "sync_rwlock"
 path = "sync_rwlock.rs"
 harness = false
