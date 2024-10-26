@@ -6,7 +6,7 @@
 #![cfg_attr(not(feature = "sync"), allow(unreachable_pub, dead_code))]
 
 use crate::loom::cell::UnsafeCell;
-use crate::loom::sync::atomic::AtomicUsize;
+use crate::loom::sync::atomic::{AtomicU16, AtomicUsize};
 use crate::loom::sync::Mutex;
 use crate::util::linked_list::{self, LinkedList};
 // use crate::util::WakeList;
@@ -199,16 +199,7 @@ type WaitList = LinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 /// [`Semaphore`]: crate::sync::Semaphore
 #[derive(Debug)]
 pub struct Notify {
-    // `state` uses 2 bits to store one of `EMPTY`,
-    // `WAITING` or `NOTIFIED`. The rest of the bits
-    // go unused.
-    //
-    // Throughout the code there are two assumptions:
-    // - state can be transitioned *from* `WAITING` only if
-    //   `waiters` lock is held
-    // - number of times `notify_waiters` was called can
-    //   be modified only if `waiters` lock is held
-    state: AtomicUsize,
+    state: AtomicU16,
     waiters: Mutex<WaitList>,
 }
 
@@ -261,9 +252,6 @@ const NOTIFICATION_ONE: usize = 0b001;
 
 // Notification type used by `notify_last`.
 const NOTIFICATION_LAST: usize = 0b101;
-
-// Notification type used by `notify_waiters`
-// const NOTIFICATION_ALL: usize = 0b010;
 
 /// Notification for a `Waiter`.
 /// This struct is equivalent to `Option<Notification>`, but uses
@@ -342,38 +330,14 @@ enum State {
     Done,
 }
 
-const NOTIFY_WAITERS_SHIFT: usize = 2;
-const STATE_MASK: usize = (1 << NOTIFY_WAITERS_SHIFT) - 1;
-const NOTIFY_WAITERS_CALLS_MASK: usize = !STATE_MASK;
-
 /// Initial "idle" state.
-const EMPTY: usize = 0;
+const EMPTY: u16 = 0;
 
 /// One or more threads are currently waiting to be notified.
-const WAITING: usize = 1;
+const WAITING: u16 = 1;
 
 /// Pending notification.
-const NOTIFIED: usize = 2;
-
-fn set_state(data: usize, state: usize) -> usize {
-    (data & NOTIFY_WAITERS_CALLS_MASK) | (state & STATE_MASK)
-}
-
-fn get_state(data: usize) -> usize {
-    data & STATE_MASK
-}
-
-// fn get_num_notify_waiters_calls(data: usize) -> usize {
-//     (data & NOTIFY_WAITERS_CALLS_MASK) >> NOTIFY_WAITERS_SHIFT
-// }
-
-// fn inc_num_notify_waiters_calls(data: usize) -> usize {
-//     data + (1 << NOTIFY_WAITERS_SHIFT)
-// }
-
-// fn atomic_inc_num_notify_waiters_calls(data: &AtomicUsize) {
-//     data.fetch_add(1 << NOTIFY_WAITERS_SHIFT, SeqCst);
-// }
+const NOTIFIED: u16 = 2;
 
 impl Notify {
     /// Create a new `Notify`, initialized without a permit.
@@ -387,7 +351,7 @@ impl Notify {
     /// ```
     pub fn new() -> Notify {
         Notify {
-            state: AtomicUsize::new(0),
+            state: AtomicU16::new(EMPTY),
             waiters: Mutex::new(LinkedList::new()),
         }
     }
@@ -412,7 +376,7 @@ impl Notify {
     #[cfg(not(all(loom, test)))]
     pub const fn const_new() -> Notify {
         Notify {
-            state: AtomicUsize::new(0),
+            state: AtomicU16::new(EMPTY),
             waiters: Mutex::const_new(LinkedList::new()),
         }
     }
@@ -468,9 +432,6 @@ impl Notify {
     /// }
     /// ```
     pub fn notified(&self) -> Notified<'_> {
-        // we load the number of times notify_waiters
-        // was called and store that in the future.
-
         Notified {
             notify: self,
             state: State::Init,
@@ -536,12 +497,11 @@ impl Notify {
         let mut curr = self.state.load(SeqCst);
 
         // If the state is `EMPTY`, transition to `NOTIFIED` and return.
-        while let EMPTY | NOTIFIED = get_state(curr) {
+        while let EMPTY | NOTIFIED = curr {
             // The compare-exchange from `NOTIFIED` -> `NOTIFIED` is intended. A
             // happens-before synchronization must happen between this atomic
             // operation and a task calling `notified().await`.
-            let new = set_state(curr, NOTIFIED);
-            let res = self.state.compare_exchange(curr, new, SeqCst, SeqCst);
+            let res = self.state.compare_exchange(curr, NOTIFIED, SeqCst, SeqCst);
 
             match res {
                 // No waiters, no further work to do
@@ -577,20 +537,19 @@ impl RefUnwindSafe for Notify {}
 
 fn notify_locked(
     waiters: &mut WaitList,
-    state: &AtomicUsize,
-    curr: usize,
+    state: &AtomicU16,
+    curr: u16,
     strategy: NotifyOneStrategy,
 ) -> Option<Waker> {
-    match get_state(curr) {
+    match curr {
         EMPTY | NOTIFIED => {
-            let res = state.compare_exchange(curr, set_state(curr, NOTIFIED), SeqCst, SeqCst);
+            let res = state.compare_exchange(curr, NOTIFIED, SeqCst, SeqCst);
 
             match res {
                 Ok(_) => None,
                 Err(actual) => {
-                    let actual_state = get_state(actual);
-                    assert!(actual_state == EMPTY || actual_state == NOTIFIED);
-                    state.store(set_state(actual, NOTIFIED), SeqCst);
+                    assert!(actual == EMPTY || actual == NOTIFIED);
+                    state.store(NOTIFIED, SeqCst);
                     None
                 }
             }
@@ -622,7 +581,7 @@ fn notify_locked(
                 // must be transitioned to `EMPTY`. As transitioning
                 // **from** `WAITING` requires the lock to be held, a
                 // `store` is sufficient.
-                state.store(set_state(curr, EMPTY), SeqCst);
+                state.store(EMPTY, SeqCst);
             }
             waker
         }
@@ -759,12 +718,10 @@ impl Notified<'_> {
         'outer_loop: loop {
             match *state {
                 State::Init => {
-                    let curr = notify.state.load(SeqCst);
-
                     // Optimistically try acquiring a pending notification
                     let res = notify.state.compare_exchange(
-                        set_state(curr, NOTIFIED),
-                        set_state(curr, EMPTY),
+                        NOTIFIED,
+                        EMPTY,
                         SeqCst,
                         SeqCst,
                     );
@@ -795,18 +752,18 @@ impl Notified<'_> {
 
                     // Transition the state to WAITING.
                     loop {
-                        match get_state(curr) {
+                        match curr {
                             EMPTY => {
                                 // Transition to WAITING
                                 let res = notify.state.compare_exchange(
-                                    set_state(curr, EMPTY),
-                                    set_state(curr, WAITING),
+                                    EMPTY,
+                                    WAITING,
                                     SeqCst,
                                     SeqCst,
                                 );
 
                                 if let Err(actual) = res {
-                                    assert_eq!(get_state(actual), NOTIFIED);
+                                    assert_eq!(actual, NOTIFIED);
                                     curr = actual;
                                 } else {
                                     break;
@@ -816,8 +773,8 @@ impl Notified<'_> {
                             NOTIFIED => {
                                 // Try consuming the notification
                                 let res = notify.state.compare_exchange(
-                                    set_state(curr, NOTIFIED),
-                                    set_state(curr, EMPTY),
+                                    NOTIFIED,
+                                    EMPTY,
                                     SeqCst,
                                     SeqCst,
                                 );
@@ -829,7 +786,7 @@ impl Notified<'_> {
                                         continue 'outer_loop;
                                     }
                                     Err(actual) => {
-                                        assert_eq!(get_state(actual), EMPTY);
+                                        assert_eq!(actual, EMPTY);
                                         curr = actual;
                                     }
                                 }
@@ -955,7 +912,7 @@ impl Drop for Notified<'_> {
         // longer stored in the linked list.
         if matches!(*state, State::Waiting) {
             let mut waiters = notify.waiters.lock();
-            let mut notify_state = notify.state.load(SeqCst);
+            let notify_state = notify.state.load(SeqCst);
 
             // We hold the lock, so this field is not concurrently accessed by
             // `notify_*` functions and we can use the relaxed ordering.
@@ -969,9 +926,8 @@ impl Drop for Notified<'_> {
             // list, then it is contained by a guarded list used by `notify_waiters`.
             unsafe { waiters.remove(NonNull::from(waiter)) };
 
-            if waiters.is_empty() && get_state(notify_state) == WAITING {
-                notify_state = set_state(notify_state, EMPTY);
-                notify.state.store(notify_state, SeqCst);
+            if waiters.is_empty() && notify_state == WAITING {
+                notify.state.store(EMPTY, SeqCst);
             }
 
             // See if the node was notified but not received. In this case, if
