@@ -393,7 +393,7 @@ impl<T> Rx<T> {
 
     fn try_peeking_ahead(&self) -> NonNull<Block<T>> {
         let mut next_head: NonNull<Block<T>> = self.head;
-        let mut index  = 0;
+        let mut index = 0;
 
         let mut advance_if_final = |index: usize| {
             if unsafe { next_head.as_ref().is_final() } {
@@ -419,7 +419,7 @@ impl<T> Rx<T> {
 
     fn advance_step<R>(block: &mut NonNull<Block<R>>, index: usize) -> ControlFlow<bool> {
         let block_index = block::start_index(index);
-        
+
         let next_block = {
             let block = unsafe { block.as_ref() };
             if block.is_at_index(block_index) {
@@ -428,7 +428,7 @@ impl<T> Rx<T> {
 
             match block.load_next(Acquire) {
                 Some(next_block) => next_block,
-                None => return ControlFlow::Break(false)
+                None => return ControlFlow::Break(false),
             }
         };
 
@@ -444,7 +444,6 @@ impl<T> Rx<T> {
         self.reclaim_blocks(tx);
         self.index = self.index.wrapping_add(1);
     }
-
 }
 
 impl<T> fmt::Debug for Rx<T> {

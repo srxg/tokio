@@ -325,7 +325,6 @@ impl<T, S: Semaphore> Rx<T, S> {
             } else {
                 Pending
             }
-
         })
     }
 
@@ -389,7 +388,7 @@ impl<T, S: Semaphore> Rx<T, S> {
                 self.inner.semaphore.add_permit();
                 coop.made_progress();
                 Poll::Ready(Some(val))
-            },
+            }
             Ready(None) => Poll::Ready(None),
             Pending => Poll::Pending,
         }

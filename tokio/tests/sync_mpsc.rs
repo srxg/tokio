@@ -1486,7 +1486,6 @@ async fn can_peek_then_recv_multiple() {
     }
 }
 
-
 #[tokio::test]
 async fn can_recv_then_peek() {
     let (sender, mut receiver) = mpsc::channel(2);
@@ -1499,7 +1498,7 @@ async fn can_recv_then_peek() {
 #[tokio::test]
 async fn can_recv_then_peek_multiple() {
     let (sender, mut receiver) = mpsc::channel(101);
-    let handle= tokio::task::spawn(async move {
+    let handle = tokio::task::spawn(async move {
         for i in 0..102 {
             sender.send(i).await.unwrap();
         }
@@ -1533,7 +1532,6 @@ async fn can_try_peeking_then_try_receveing() {
     assert_eq!(peeked_clone, received);
 }
 
-
 #[tokio::test]
 async fn can_make_peek_recv_progress() {
     let (sender, mut receiver) = mpsc::channel(257);
@@ -1551,7 +1549,6 @@ async fn can_make_peek_recv_progress() {
         assert!(receiver.is_empty(), "{value}. len: {}", receiver.len());
     }
 }
-
 
 #[tokio::test]
 async fn can_peek_post_block_cap() {

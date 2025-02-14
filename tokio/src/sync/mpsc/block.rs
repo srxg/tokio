@@ -157,12 +157,12 @@ impl<T> Block<T> {
             Some(Read::Value(value.assume_init()))
         })
     }
-    
+
     pub(crate) unsafe fn peek(&self, slot_index: usize) -> Option<Read<&T>> {
         self.ready_offset_read(slot_index, |offset| {
             // Get the value
             let value = self.values[offset].with(|ptr| &*ptr);
-            
+
             Some(Read::Value(value.assume_init_ref()))
         })
     }
@@ -405,7 +405,8 @@ impl<T> Block<T> {
     }
 
     unsafe fn ready_offset_read<F, Y>(&self, slot_index: usize, operation: F) -> Option<Read<Y>>
-        where F: FnOnce(usize) -> Option<Read<Y>>
+    where
+        F: FnOnce(usize) -> Option<Read<Y>>,
     {
         let offset = offset(slot_index);
         let ready_bits = self.header.ready_slots.load(Acquire);
