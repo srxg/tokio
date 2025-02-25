@@ -252,6 +252,7 @@ impl<T> Receiver<T> {
     ///     tx.send("hello").await.unwrap();
     ///
     ///     assert_eq!(Ok(&"hello"), rx.try_peek());
+    ///     assert_eq!(Ok("hello"), rx.try_recv());
     ///     assert_eq!(Err(TryRecvError::Empty), rx.try_peek());
     ///
     ///     tx.send("hello").await.unwrap();
@@ -259,6 +260,7 @@ impl<T> Receiver<T> {
     ///     drop(tx);
     ///
     ///     assert_eq!(Ok(&"hello"), rx.try_peek());
+    ///     assert_eq!(Ok("hello"), rx.try_recv());
     ///     assert_eq!(Err(TryRecvError::Disconnected), rx.try_peek());
     /// }
     /// ```
