@@ -209,11 +209,11 @@ impl<T> Receiver<T> {
     ///     let (tx, mut rx) = mpsc::channel(100);
     ///
     ///     tokio::spawn(async move {
-    ///         tx.send("hello").await.unwrap();
+    ///         tx.send(1).await.unwrap();
     ///     });
     ///
-    ///     assert_eq!(Some("hello"), rx.recv().await);
-    ///     assert_eq!(None, rx.recv().await);
+    ///     assert_eq!(Some(&1), rx.peek().await);
+    ///     assert_eq!(Some(1), rx.recv().await);
     /// }
     /// ```
     ///
