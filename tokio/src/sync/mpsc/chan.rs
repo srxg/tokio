@@ -381,7 +381,7 @@ impl<T, S: Semaphore> Rx<T, S> {
         ready!(crate::trace::trace_leaf(cx));
 
         // Keep track of task budget
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         match self.peek(cx) {
             Ready(Some(peeked_value)) => {
