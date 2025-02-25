@@ -195,6 +195,28 @@ impl<T> Receiver<T> {
     /// the channel is closed.  Note that if [`close`] is called, but there are
     /// still outstanding [`Permits`] from before it was closed, the channel is
     /// not considered closed by `peek` until the permits are released.
+    ///
+    /// [`close`]: Self::close
+    /// [`Permits`]: struct@crate::sync::mpsc::Permit
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use tokio::sync::mpsc;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, mut rx) = mpsc::channel(100);
+    ///
+    ///     tokio::spawn(async move {
+    ///         tx.send("hello").await.unwrap();
+    ///     });
+    ///
+    ///     assert_eq!(Some("hello"), rx.recv().await);
+    ///     assert_eq!(None, rx.recv().await);
+    /// }
+    /// ```
+    ///
     pub async fn peek(&self) -> Option<&T> {
         use std::future::poll_fn;
         poll_fn(|cx| self.chan.peek(cx)).await
