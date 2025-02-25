@@ -209,11 +209,11 @@ impl<T> Receiver<T> {
     ///     let (tx, mut rx) = mpsc::channel(100);
     ///
     ///     tokio::spawn(async move {
-    ///         tx.send("hello").await.unwrap();
+    ///         tx.send(1).await.unwrap();
     ///     });
     ///
-    ///     assert_eq!(Some("hello"), rx.recv().await);
-    ///     assert_eq!(None, rx.recv().await);
+    ///     assert_eq!(Some(&1), rx.peek().await);
+    ///     assert_eq!(Some(1), rx.recv().await);
     /// }
     /// ```
     ///
@@ -252,6 +252,7 @@ impl<T> Receiver<T> {
     ///     tx.send("hello").await.unwrap();
     ///
     ///     assert_eq!(Ok(&"hello"), rx.try_peek());
+    ///     assert_eq!(Ok("hello"), rx.try_recv());
     ///     assert_eq!(Err(TryRecvError::Empty), rx.try_peek());
     ///
     ///     tx.send("hello").await.unwrap();
@@ -259,6 +260,7 @@ impl<T> Receiver<T> {
     ///     drop(tx);
     ///
     ///     assert_eq!(Ok(&"hello"), rx.try_peek());
+    ///     assert_eq!(Ok("hello"), rx.try_recv());
     ///     assert_eq!(Err(TryRecvError::Disconnected), rx.try_peek());
     /// }
     /// ```
