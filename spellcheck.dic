@@ -1,4 +1,4 @@
-300
+306
 &
 +
 <
@@ -70,6 +70,10 @@ connectionless
 coroutines
 cpu
 cpus
+cqe
+CQE
+cqe's
+customizable
 Customizable
 datagram
 Datagram
@@ -169,6 +173,7 @@ mio's
 miri
 misconfigured
 mock's
+monomorphization
 mpmc
 mpsc
 multi
@@ -179,6 +184,7 @@ mut
 mutex
 Mutex
 Nagle
+namespace
 nonblocking
 nondecreasing
 noop
@@ -187,7 +193,6 @@ ok
 oneshot
 ORed
 os
-overweighing
 parker
 parsers
 peekable
@@ -285,6 +290,7 @@ unsets
 Unsets
 unsynchronized
 untrusted
+uring
 usecases
 Valgrind
 Varghese

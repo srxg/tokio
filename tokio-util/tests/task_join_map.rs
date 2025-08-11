@@ -1,5 +1,7 @@
 #![warn(rust_2018_idioms)]
-#![cfg(all(feature = "rt", tokio_unstable))]
+#![cfg(feature = "join-map")]
+
+use std::panic::AssertUnwindSafe;
 
 use tokio::sync::oneshot;
 use tokio::time::Duration;
@@ -24,7 +26,7 @@ async fn test_with_sleep() {
     map.detach_all();
     assert_eq!(map.len(), 0);
 
-    assert!(matches!(map.join_next().await, None));
+    assert!(map.join_next().await.is_none());
 
     for i in 0..10 {
         map.spawn(i, async move {
@@ -43,7 +45,7 @@ async fn test_with_sleep() {
     for was_seen in &seen {
         assert!(was_seen);
     }
-    assert!(matches!(map.join_next().await, None));
+    assert!(map.join_next().await.is_none());
 
     // Do it again.
     for i in 0..10 {
@@ -62,7 +64,7 @@ async fn test_with_sleep() {
     for was_seen in &seen {
         assert!(was_seen);
     }
-    assert!(matches!(map.join_next().await, None));
+    assert!(map.join_next().await.is_none());
 }
 
 #[tokio::test]
@@ -248,7 +250,7 @@ async fn join_map_coop() {
     loop {
         match map.join_next().now_or_never() {
             Some(Some((key, Ok(i)))) => assert_eq!(key, i),
-            Some(Some((key, Err(err)))) => panic!("failed[{}]: {}", key, err),
+            Some(Some((key, Err(err)))) => panic!("failed[{key}]: {err}"),
             None => {
                 coop_count += 1;
                 tokio::task::yield_now().await;
@@ -296,4 +298,81 @@ async fn abort_all() {
     for was_seen in &seen {
         assert!(was_seen);
     }
+}
+
+#[tokio::test]
+async fn duplicate_keys() {
+    let mut map = JoinMap::new();
+    map.spawn(1, async { 1 });
+    map.spawn(1, async { 2 });
+
+    assert_eq!(map.len(), 1);
+
+    let (key, res) = map.join_next().await.unwrap();
+    assert_eq!(key, 1);
+    assert_eq!(res.unwrap(), 2);
+
+    assert!(map.join_next().await.is_none());
+}
+
+#[tokio::test]
+async fn duplicate_keys2() {
+    let (send, recv) = oneshot::channel::<()>();
+
+    let mut map = JoinMap::new();
+    map.spawn(1, async { 1 });
+    map.spawn(1, async {
+        recv.await.unwrap();
+        2
+    });
+
+    assert_eq!(map.len(), 1);
+
+    tokio::select! {
+        biased;
+        res = map.join_next() => match res {
+            Some((_key, res)) => panic!("Task {res:?} exited."),
+            None => panic!("Phantom task completion."),
+        },
+        () = tokio::task::yield_now() => {},
+    }
+
+    send.send(()).unwrap();
+
+    let (key, res) = map.join_next().await.unwrap();
+    assert_eq!(key, 1);
+    assert_eq!(res.unwrap(), 2);
+
+    assert!(map.join_next().await.is_none());
+}
+
+#[cfg_attr(not(panic = "unwind"), ignore)]
+#[tokio::test]
+async fn duplicate_keys_drop() {
+    #[derive(Hash, Debug, PartialEq, Eq)]
+    struct Key;
+    impl Drop for Key {
+        fn drop(&mut self) {
+            panic!("drop called for key");
+        }
+    }
+
+    let (send, recv) = oneshot::channel::<()>();
+
+    let mut map = JoinMap::new();
+
+    map.spawn(Key, async { recv.await.unwrap() });
+
+    // replace the task, force it to drop the key and abort the task
+    // we should expect it to panic when dropping the key.
+    let _ = std::panic::catch_unwind(AssertUnwindSafe(|| map.spawn(Key, async {}))).unwrap_err();
+
+    // don't panic when this key drops.
+    let (key, _) = map.join_next().await.unwrap();
+    std::mem::forget(key);
+
+    // original task should have been aborted, so the sender should be dangling.
+    assert!(send.is_closed());
+
+    assert!(map.join_next().await.is_none());
 }

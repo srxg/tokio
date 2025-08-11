@@ -218,7 +218,7 @@ cfg_io_driver_impl! {
     pub(crate) mod interest;
     pub(crate) mod ready;
 
-    cfg_net! {
+    cfg_net_or_uring! {
         pub use interest::Interest;
         pub use ready::Ready;
     }
@@ -292,4 +292,8 @@ cfg_io_blocking! {
         pub(crate) use crate::blocking::spawn_blocking as run;
         pub(crate) use crate::blocking::JoinHandle as Blocking;
     }
+}
+
+cfg_tokio_uring! {
+    pub(crate) mod uring;
 }
